@@ -781,17 +781,46 @@
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header"><h3>AI Drawing Analysis</h3><span style="font-size:0.75rem;color:var(--quarry-grey)">Upload a drawing then describe it below</span></div>
+        <div class="card" style="border:2px solid var(--vein-gold);">
+          <div class="card-header" style="background:var(--onyx);">
+            <h3 style="color:var(--vein-gold);">🤖 AI Drawing Analysis</h3>
+            <span id="draw-key-badge" style="font-size:0.75rem;color:var(--stone-mid);">Checking API key...</span>
+          </div>
           <div class="card-body">
+
+            <!-- API key mini-setup (shown when no key) -->
+            <div id="draw-api-setup" style="display:none;padding:1rem;background:linear-gradient(135deg,var(--slate),var(--onyx));border-radius:8px;border-left:3px solid var(--vein-gold);margin-bottom:1.25rem;">
+              <div style="color:var(--travertine);font-size:0.85rem;font-weight:600;margin-bottom:0.6rem;">🔑 API Key Required</div>
+              <p style="color:var(--stone-mid);font-size:0.8rem;line-height:1.7;margin-bottom:0.75rem;">
+                To use AI analysis, you need a free Anthropic API key.<br>
+                <strong style="color:var(--vein-gold);">Get yours in 2 minutes:</strong><br>
+                1. Go to <a href="https://console.anthropic.com" target="_blank" style="color:var(--vein-gold);">console.anthropic.com</a> → Sign up free<br>
+                2. Click <strong style="color:#fff;">API Keys</strong> → <strong style="color:#fff;">Create Key</strong><br>
+                3. Copy the key (starts with <code style="background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:3px;color:#fff;">sk-ant-</code>) and paste below
+              </p>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:0.6rem;">
+                <input type="password" id="draw-api-key-input" placeholder="sk-ant-api03-..." style="font-size:0.82rem;">
+                <button class="btn btn-primary" onclick="savekeyFromDrawPanel()" style="white-space:nowrap;">Save & Enable</button>
+              </div>
+            </div>
+
+            <!-- Main analysis form -->
             <div class="form-group">
-              <label>Describe your uploaded drawing or paste key dimensions</label>
-              <textarea id="drawing-desc" placeholder="e.g. Ground floor plan showing living room (8m x 6m), dining area (5m x 4m), entrance foyer (3m x 3m), master bathroom (4m x 3m). All floors to be marble. Walls to have marble cladding up to 2.4m height..."></textarea>
+              <label>Describe your drawing / paste room dimensions</label>
+              <textarea id="drawing-desc" rows="5" placeholder="e.g. Ground floor plan:&#10;• Living room: 8m x 6m&#10;• Dining area: 5m x 4m  &#10;• Entrance foyer: 3m x 3m&#10;• Master bathroom: 4m x 3m (full marble floor + walls to 2.4m)&#10;• Kitchen: 4m x 3.5m (floor tiles only)&#10;&#10;Also describe: finish type, wall height, any stairs, countertops, special features..."></textarea>
             </div>
+
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;margin-bottom:0.75rem;">
+              <button class="btn-sm btn-outline" onclick="setDrawDesc('Ground floor: Living room 8x6m, Dining 5x4m, Foyer 3x3m. First floor: Master bedroom 7x5m, Master bath 4x3m full marble, 2 en-suite baths 3x2.5m each. All floors marble polished, bathroom walls marble to 2.4m height.')">🏠 Sample Villa</button>
+              <button class="btn-sm btn-outline" onclick="setDrawDesc('Office lobby 12x10m marble floor with feature medallion. 4 meeting rooms 4x4m each with marble floor. Reception area 6x4m with marble wall cladding full height. Toilets x2 with marble floor and walls.')">🏢 Sample Office</button>
+              <button class="btn-sm btn-outline" onclick="setDrawDesc('Hotel suite: Bedroom 6x5m, Living 5x4m, Bathroom 5x3m full marble floor and walls, walk-in wardrobe 3x2m. Corridor 15m x 1.8m. All marble polished finish premium grade.')">🏨 Sample Hotel</button>
+            </div>
+
             <div class="btn-group">
-              <button class="btn btn-primary" onclick="analyzeDrawing()">🤖 Analyse Drawing & Auto-Populate Takeoff</button>
+              <button class="btn btn-primary" onclick="analyzeDrawing()" style="font-size:0.95rem;padding:0.75rem 1.75rem;">🤖 Analyse Drawing & Extract Quantities</button>
             </div>
-            <div id="drawing-ai-result" class="hidden" style="margin-top:1rem;"></div>
+
+            <div id="drawing-ai-result" class="hidden" style="margin-top:1.25rem;"></div>
           </div>
         </div>
 
@@ -1937,40 +1966,138 @@ function clearChat() {
 // Keep old functions for drawing analysis compatibility
 async function runAIAnalysis() { sendAIMessage(); }
 
+function setDrawDesc(t) { document.getElementById('drawing-desc').value = t; }
+
+function savekeyFromDrawPanel() {
+  const k = document.getElementById('draw-api-key-input')?.value?.trim();
+  if (!k || !k.startsWith('sk-ant-')) { notify('⚠️ Key must start with sk-ant-'); return; }
+  localStorage.setItem('im_api_key', k);
+  refreshDrawPanelKeyStatus();
+  notify('✅ API Key saved — AI analysis enabled!');
+}
+
+function refreshDrawPanelKeyStatus() {
+  const key = localStorage.getItem('im_api_key') || '';
+  const badge = document.getElementById('draw-key-badge');
+  const setup = document.getElementById('draw-api-setup');
+  if (!badge) return;
+  if (key && key.startsWith('sk-ant-')) {
+    badge.innerHTML = '<span style="color:#6dbf8a;">✅ AI Ready — Key Active</span>';
+    if (setup) setup.style.display = 'none';
+  } else {
+    badge.innerHTML = '<span style="color:#e0a07a;">⚠️ API Key needed — see below</span>';
+    if (setup) setup.style.display = 'block';
+  }
+}
+
 async function analyzeDrawing() {
   const desc = document.getElementById('drawing-desc').value.trim();
-  if (!desc) { notify('Please describe your drawing first'); return; }
+  if (!desc) { notify('Please describe your drawing or enter room dimensions'); return; }
 
+  const apiKey = getApiKey();
   const resultDiv = document.getElementById('drawing-ai-result');
   resultDiv.classList.remove('hidden');
-  resultDiv.innerHTML = `<div class="ai-panel"><div class="ai-loading"><div class="spinner"></div> Analysing drawing and extracting quantities...</div></div>`;
 
-  const prompt = `You are an expert quantity surveyor specialising in interior marble and stone fit-out. 
-Based on this drawing description, extract and calculate all stone/marble quantities needed.
-Format your response as a clear, structured takeoff list with:
-1. Room-by-room breakdown
-2. Floor areas (m²)
-3. Wall cladding areas (m²) at standard height
-4. Any special elements (countertops, stairs, features)
-5. Recommended materials for each area
-6. Estimated quantities including wastage
+  if (!apiKey || !apiKey.startsWith('sk-ant-')) {
+    resultDiv.innerHTML = `<div class="ai-panel" style="border-left:3px solid var(--vein-gold);">
+      <h4 style="color:var(--vein-gold);">🔑 API Key Required</h4>
+      <div class="ai-response">
+To use AI Drawing Analysis you need an Anthropic API key.<br><br>
+<strong style="color:var(--vein-gold);">Quick setup (2 minutes):</strong><br>
+1. Open <a href="https://console.anthropic.com" target="_blank" style="color:var(--vein-gold);">console.anthropic.com</a> in a new tab<br>
+2. Sign up free (no credit card needed for free tier)<br>
+3. Go to <strong>API Keys</strong> → <strong>Create Key</strong><br>
+4. Copy the key and paste it in the field above, then click <strong>Save & Enable</strong><br><br>
+<em style="color:var(--stone-mid);">Your key is stored only in this browser — completely private.</em>
+      </div>
+    </div>`;
+    return;
+  }
 
-Drawing/Project Description: ${desc}
+  resultDiv.innerHTML = `<div class="ai-panel"><div class="ai-loading"><div class="spinner"></div> Analysing drawing and calculating quantities...</div></div>`;
 
-Provide a practical, contractor-ready takeoff.`;
+  const prompt = `You are a senior quantity surveyor at Infinity Marble Trading and Maintenance Service W.L.L, Qatar.
+
+Analyse the following drawing description and produce a complete, contractor-ready marble and stone quantity takeoff.
+
+Output format — use clear sections:
+
+## ROOM-BY-ROOM TAKEOFF
+
+For each room/area:
+| Room | Element | Length(m) | Width(m) | Area(m²) | +Wastage | Total(m²) | Recommended Material |
+(table format)
+
+## SUMMARY TABLE
+Total floors, walls, stairs, countertops (m²)
+
+## MATERIAL RECOMMENDATIONS
+Best stone for each area with grade and finish
+
+## SPECIAL ITEMS
+Stairs, countertops, waterjet, feature walls
+
+## NOTES FOR ESTIMATOR
+Key risks, assumptions, items to verify on site
+
+Drawing Description:
+${desc}`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] })
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }]
+      })
     });
     const data = await response.json();
-    const text = data.content?.map(b => b.text || '').join('\n') || '';
-    resultDiv.innerHTML = `<div class="ai-panel"><h4>📐 Drawing Analysis & Quantity Extraction</h4><div class="ai-response">${text}</div></div>`;
+    if (data.error) throw new Error(data.error.message);
+    const raw = data.content?.map(b => b.text || '').join('\n') || '';
+    // Render markdown-ish output nicely
+    const formatted = raw
+      .replace(/## (.*)/g, '<div style="font-family:Playfair Display,serif;font-size:1rem;color:var(--vein-gold);border-bottom:1px solid rgba(184,150,90,0.3);padding-bottom:0.3rem;margin:1.25rem 0 0.6rem;font-weight:600;">$1</div>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--travertine);">$1</strong>')
+      .replace(/\| (.*) \|/g, (m) => {
+        const cells = m.split('|').filter(c => c.trim());
+        return '<div style="display:flex;gap:0;border-bottom:1px solid rgba(255,255,255,0.07);">' +
+          cells.map((c,i) => `<div style="flex:1;padding:0.35rem 0.6rem;font-size:0.78rem;${i===0?'font-weight:500;color:var(--vein-gold-light);':'color:var(--travertine);'}">${c.trim()}</div>`).join('') + '</div>';
+      })
+      .replace(/\n/g, '<br>');
+    resultDiv.innerHTML = `
+      <div class="ai-panel">
+        <h4>📐 Drawing Analysis — Quantity Takeoff</h4>
+        <div style="margin-top:0.5rem;">${formatted}</div>
+        <div style="margin-top:1.25rem;padding-top:0.85rem;border-top:1px solid rgba(184,150,90,0.2);display:flex;gap:0.5rem;">
+          <button class="btn-sm btn-outline" onclick="copyAIResult()">📋 Copy Results</button>
+          <button class="btn-sm btn-gold" onclick="showPanel('takeoff', document.querySelectorAll('.nav-item')[4])">→ Go to Takeoff Sheets</button>
+        </div>
+      </div>`;
   } catch (e) {
-    resultDiv.innerHTML = `<div class="ai-panel"><div class="ai-response" style="color:var(--stone-mid);">AI analysis unavailable. ${e.message}</div></div>`;
+    resultDiv.innerHTML = `<div class="ai-panel">
+      <h4 style="color:#e07a7a;">⚠️ Connection Error</h4>
+      <div class="ai-response" style="color:var(--stone-mid);">
+        <strong style="color:#e07a7a;">${e.message}</strong><br><br>
+        Common fixes:<br>
+        • Check your API key starts with <code style="background:rgba(255,255,255,0.1);padding:1px 4px;border-radius:3px;">sk-ant-</code><br>
+        • Make sure you have internet access<br>
+        • Your API key may be expired — generate a new one at <a href="https://console.anthropic.com" target="_blank" style="color:var(--vein-gold);">console.anthropic.com</a>
+      </div>
+    </div>`;
   }
+}
+
+function copyAIResult() {
+  const el = document.getElementById('drawing-ai-result');
+  const text = el?.innerText || '';
+  navigator.clipboard?.writeText(text).then(() => notify('📋 Results copied!'));
 }
 
 function setAIQuery(q) { if(document.getElementById('ai-query')) document.getElementById('ai-query').value = q; }
@@ -2043,7 +2170,7 @@ renderScope();
 filterMaterials();
 renderAllTakeoffTabs();
 recalcTotals();
-setTimeout(checkApiKey, 200);
+setTimeout(() => { checkApiKey(); refreshDrawPanelKeyStatus(); }, 200);
 
 // Enter key to send chat (Shift+Enter for newline)
 document.addEventListener('keydown', function(e) {
